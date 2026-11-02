@@ -41,6 +41,9 @@ dependencies = []
 Repository = "https://github.com/aviallon/bchdedupe"
 Issues = "https://github.com/aviallon/bchdedupe/issues"
 
+[project.scripts]
+bchdedupe = "bchdedupe.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/bchdedupe"]
 
