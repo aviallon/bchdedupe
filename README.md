@@ -36,7 +36,8 @@ bcachefs over-reporting how much it had deduplicated (see
 * a filesystem that implements `FIDEDUPERANGE`: **bcachefs** (btrfs and XFS with
   reflink also work, but there duperemove is already fine)
 * `fd` — optional, strongly recommended: it indexes candidates ~25× faster than
-  the built-in walk (4 s vs 119 s on a 4 TB home)
+  the built-in walk (4 s vs 119 s on a 4 TB home). Debian and Ubuntu ship it as
+  `fdfind`, which is looked for too
 * `bcachefs` (from `bcachefs-tools`) — optional: used only to report how much
   space the filesystem says it actually freed
 

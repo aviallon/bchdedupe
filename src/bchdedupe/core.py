@@ -45,6 +45,24 @@ SKIP_DIRS: Final[tuple[str, ...]] = ("/proc", "/sys", "/dev", "/run")
 #: Where progress lines go (the CLI prints them to stderr).
 _Log = Callable[[str], None]
 
+#: Names the fd binary ships under: Debian and Ubuntu call it `fdfind`.
+FD_NAMES: Final[tuple[str, ...]] = ("fd", "fdfind")
+
+
+def find_fd() -> str | None:
+    """Path to the fd binary, under either of the names distributions use.
+
+    Debian/Ubuntu package it as `fd-find` and install `fdfind`, because `fd`
+    collides with an unrelated tool already in their archive. Assuming the name
+    means silently losing the fast path on those systems — which is precisely the
+    kind of failure that looks like success.
+    """
+    for name in FD_NAMES:
+        found = shutil.which(name)
+        if found is not None:
+            return found
+    return None
+
 
 def _noop(_message: str) -> None:
     """Default progress sink: stay quiet."""
@@ -203,10 +221,11 @@ def walk_fd(root: str, min_size: int) -> list[FileEntry] | None:
     predicate :func:`walk` uses, so the two functions agree by construction.
     Returns ``None`` when ``fd`` is absent.
     """
-    if shutil.which("fd") is None:
+    binary = find_fd()
+    if binary is None:
         return None
     command = [
-        "fd",
+        binary,
         "--no-ignore",
         "--hidden",
         "-t",
@@ -317,7 +336,9 @@ def scan(
         else:
             entries = walk_fd(root, min_size)
             if entries is None and walk_mode == "fd":
-                raise RuntimeError("fd was requested with --walk fd but is not on PATH")
+                raise RuntimeError(
+                    "fd was requested with --walk fd but neither fd nor fdfind is on PATH"
+                )
     if entries is None:
         entries = walk(root, min_size)
     log(f"{len(entries)} files >= {human(min_size)} in {time.monotonic() - started:.1f}s")

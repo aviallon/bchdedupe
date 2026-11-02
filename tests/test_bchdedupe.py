@@ -146,6 +146,24 @@ def test_group_waste_is_per_extra_member() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def test_fd_binary_is_found_under_either_distribution_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Debian ships fd as `fdfind`; assuming the name silently loses the fast path."""
+    seen: list[str] = []
+
+    def only(names: str) -> str | None:
+        seen.append(names)
+        return "/usr/bin/fdfind" if names == "fdfind" else None
+
+    monkeypatch.setattr(shutil, "which", only)
+    assert core.find_fd() == "/usr/bin/fdfind"
+    assert seen == ["fd", "fdfind"]
+
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    assert core.find_fd() is None
+
+
 def test_scan_groups_identical_files_and_ignores_lookalikes(workdir: Path) -> None:
     write(workdir / "a/one.bin", PAYLOAD)
     write(workdir / "b/two.bin", PAYLOAD)
@@ -201,7 +219,7 @@ def test_scan_finds_duplicates_under_a_root_that_is_a_skipped_path(workdir: Path
     assert len(core.scan(str(scratch), 1, walk_mode="python").groups) == 1
 
 
-@pytest.mark.skipif(shutil.which("fd") is None, reason="fd is not installed")
+@pytest.mark.skipif(core.find_fd() is None, reason="fd/fdfind is not installed")
 def test_fd_index_finds_exactly_what_the_python_walk_finds(workdir: Path) -> None:
     """The optimisation must not change which files are considered.
 
@@ -228,9 +246,11 @@ def test_fd_index_finds_exactly_what_the_python_walk_finds(workdir: Path) -> Non
 
 def _index_file(directory: Path) -> str:
     index = directory / "index.txt"
+    binary = core.find_fd()
+    assert binary is not None
     completed = subprocess.run(
         [
-            "fd",
+            binary,
             "--no-ignore",
             "--hidden",
             "-t",
