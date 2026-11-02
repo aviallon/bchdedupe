@@ -47,6 +47,14 @@ bchdedupe = "bchdedupe.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bchdedupe"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra -m 'not integration'"
+markers = [
+    "integration: needs a real dedupe-capable filesystem and measures space on it",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 92
