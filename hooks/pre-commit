@@ -1,0 +1,34 @@
+#!/bin/sh
+# Run before every commit. Fast enough to be tolerable: ruff on the tree and a
+# strict mypy pass take a couple of seconds.
+#
+# Install with:  git config core.hooksPath hooks
+
+set -eu
+
+if [ "${BCHDEDUPE_SKIP_HOOKS:-0}" = "1" ]; then
+    echo "pre-commit: BCHDEDUPE_SKIP_HOOKS=1 — skipping checks" >&2
+    exit 0
+fi
+
+missing=''
+for tool in ruff mypy; do
+    command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+done
+if [ -n "$missing" ]; then
+    cat >&2 <<EOF
+pre-commit: cannot run the checks:$missing not on PATH.
+
+This project keeps ruff and mypy green at all times. Enter the dev shell first:
+
+    nix develop -c 'git commit ...'
+
+(or install the tools yourself). If you really mean to commit without them,
+use 'git commit --no-verify' — but then CI will disagree with you.
+EOF
+    exit 1
+fi
+
+ruff format --check src tests
+ruff check src tests
+mypy

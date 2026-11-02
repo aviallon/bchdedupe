@@ -1,0 +1,37 @@
+#!/bin/sh
+# Run before every push: the same checks as pre-commit, plus the test suite.
+#
+# The suite skips its filesystem-dependent tests where FIDEDUPERANGE is not
+# implemented (an ext4 CI runner, a tmpfs), so on such a machine this gate is
+# honest but weak. On bcachefs it runs everything, including the two tests that
+# matter most: a differing block must not be shared, and the integration test
+# that asks the filesystem whether space was really freed.
+#
+# Install with:  git config core.hooksPath hooks
+
+set -eu
+
+if [ "${BCHDEDUPE_SKIP_HOOKS:-0}" = "1" ]; then
+    echo "pre-push: BCHDEDUPE_SKIP_HOOKS=1 — skipping checks" >&2
+    exit 0
+fi
+
+missing=''
+for tool in ruff mypy pytest; do
+    command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+done
+if [ -n "$missing" ]; then
+    cat >&2 <<EOF
+pre-push: cannot run the checks:$missing not on PATH.
+
+    nix develop -c 'git push'
+
+or 'git push --no-verify' if you accept CI will run the same thing.
+EOF
+    exit 1
+fi
+
+ruff format --check src tests
+ruff check src tests
+mypy
+pytest -q

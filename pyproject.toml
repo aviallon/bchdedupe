@@ -44,6 +44,13 @@ Issues = "https://github.com/aviallon/bchdedupe/issues"
 [project.scripts]
 bchdedupe = "bchdedupe.cli:main"
 
+[dependency-groups]
+dev = [
+    "ruff>=0.11",
+    "mypy>=1.11",
+    "pytest>=8",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/bchdedupe"]
 
