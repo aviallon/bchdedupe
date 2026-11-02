@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -85,6 +86,21 @@ def _pick_workspace_base() -> Path | None:
         if dedupe_supported(base):
             return base
     return None
+
+
+def filesystem_type(path: Path) -> str:
+    """The filesystem type a path lives on, from /proc/mounts (longest match)."""
+    resolved = str(path.resolve())
+    best, kind = "", "unknown"
+    with open("/proc/mounts", errors="replace") as mounts:
+        for line in mounts:
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            mountpoint = parts[1].replace("\\040", " ")
+            if resolved.startswith(mountpoint) and len(mountpoint) >= len(best):
+                best, kind = mountpoint, parts[2]
+    return kind
 
 
 WORKSPACE_BASE = _pick_workspace_base()
@@ -478,36 +494,63 @@ def test_cli_apply_reports_what_it_reclaimed(
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.integration
-@needs_dedupe
-@pytest.mark.skipif(shutil.which("bcachefs") is None, reason="not a bcachefs system")
-def test_integration_space_is_really_reclaimed(workdir: Path) -> None:
-    """End-to-end: the filesystem's own accounting must drop.
-
-    Marked ``integration`` because it reads whole-filesystem counters, which move
-    on their own; run it explicitly with ``pytest -m integration``.
-    """
-    write(workdir / "a.bin", PAYLOAD)
-    write(workdir / "b.bin", PAYLOAD)
-    before = core.filesystem_used("/")
-    assert before is not None, "bcachefs is present but gave no '1x:' line"
-    result = core.scan(str(workdir), 1, walk_mode="python")
-    applied = core.apply_groups(result.groups)
-    os.sync()
-    after = core.filesystem_used("/")
-    assert after is not None
-
-    assert applied.gained == len(PAYLOAD)
-    # The accounting lags behind the operation, and the rest of the machine keeps
-    # using the filesystem too, so this is a floor rather than an equality.
-    assert before - after >= len(PAYLOAD) // 2, (
-        "expected the filesystem to free most of the duplicate, "
-        f"used went {before} -> {after} for a {len(PAYLOAD)} byte duplicate"
-    )
-
-
 def test_filesystem_used_reads_bcachefs_accounting() -> None:
+    """Pin the parser against the real command, not a fixture of my own making."""
     if shutil.which("bcachefs") is None:
         pytest.skip("not a bcachefs system")
     assert (core.filesystem_used("/") or 0) > 0
     assert core.filesystem_used("/definitely/not/a/mountpoint") is None
+
+
+# There is deliberately no automated "did bcachefs free the space" test.
+#
+# `bcachefs fs usage` is the only figure worth reading on bcachefs, and it answers
+# far too lazily to be an oracle: measured on this machine, deduplicating a 128 MiB
+# pair moved it by *nothing* in 180 seconds of polling (it drifted up by 9 MB from
+# unrelated churn instead), while a 17-minute real run moved it by 83 GB. A test
+# built on that either fails at random or always skips, and neither is worth
+# keeping. The end-to-end proof lives in docs/why-not-duperemove.md, with the
+# numbers from that real run.
+
+
+@pytest.mark.integration
+@needs_dedupe
+@pytest.mark.skipif(WORKSPACE_BASE is None, reason="no dedupe-capable filesystem")
+def test_integration_statvfs_shows_the_space_coming_back(workdir: Path) -> None:
+    """Free space must move, measured the ordinary way.
+
+    This is the test CI can run: a loop-backed btrfs reports its free space
+    accurately, so `statvfs` before and after is a real measurement, and it needs
+    no bcachefs binary.
+
+    It is skipped on bcachefs on purpose. Measured there: deduplicating a 16.8 MB
+    pair leaves `statvfs` free space 1 MB higher, not 16 — bcachefs's accounting
+    lags, and `bcachefs fs usage` is the only figure worth reading on it (and it is
+    too lazy to serve as a test oracle; see the note further up).
+    """
+    assert WORKSPACE_BASE is not None
+    if filesystem_type(WORKSPACE_BASE) == "bcachefs":
+        pytest.skip("bcachefs's statvfs lags; see the note above")
+
+    size = 32 << 20
+    payload = (_UNIT * (size // len(_UNIT) + 1))[:size]
+    write(workdir / "a.bin", payload)
+    write(workdir / "b.bin", payload)
+    os.sync()
+    before = shutil.disk_usage(workdir).free
+
+    result = core.scan(str(workdir), 1, walk_mode="python")
+    applied = core.apply_groups(result.groups)
+    os.sync()
+    after = shutil.disk_usage(workdir).free
+    for _ in range(30):
+        if after - before >= size // 2:
+            break
+        time.sleep(1)
+        os.sync()
+        after = shutil.disk_usage(workdir).free
+
+    assert applied.gained == size
+    assert after - before >= size // 2, (
+        f"free space went {before} -> {after} for a {size} byte duplicate"
+    )

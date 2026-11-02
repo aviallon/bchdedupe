@@ -99,11 +99,17 @@ first, because they contain numbers.
 
 ## Testing policy
 
-- Tests that need `FIDEDUPERANGE` **skip** where it is absent (ext4 CI, tmpfs)
-  and are honest about it. `/tmp` is a tmpfs on many machines; the suite looks for
-  a capable directory and honours `BCHDEDUPE_TEST_DIR`.
+- Tests that need `FIDEDUPERANGE` **skip** where it is absent (ext4, tmpfs) and
+  are honest about it. `/tmp` is a tmpfs on many machines; the suite looks for a
+  capable directory and honours `BCHDEDUPE_TEST_DIR`. CI mounts a loopback btrfs
+  and points that variable at it, so the ioctl tests do run there — see
+  `hooks/README.md` for what that buys and what it cannot.
 - The integration test (`-m integration`) is deselected by default because it
-  reads whole-filesystem counters, which move on their own.
+  reads whole-filesystem counters, which move on their own. It runs in the btrfs
+  CI job, where those counters are accurate.
+- Do not build a test on `bcachefs fs usage`: it is lazy enough to be useless as
+  an oracle (a 128 MiB deduplication moved it by nothing in 180 s). Use it to
+  report, and measure end to end by hand.
 - Pure-logic tests — the chunk walk, the master rotation, the clamp on the
   kernel's answer — run everywhere and are the ones that protect the algorithm.
   Keep them that way: they are the only part of the safety argument CI can check.

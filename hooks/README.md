@@ -28,11 +28,23 @@ nix develop -c 'git commit -m "…"'
 `git commit --no-verify` remains available for someone who really means it, and
 CI runs exactly the same checks either way.
 
-## The gap CI cannot close
+## What CI covers, and what it cannot
 
-`FIDEDUPERANGE` is not implemented on ext4, which is what GitHub-hosted runners
-use, so the filesystem-dependent tests skip there. What CI *does* verify is that
-the suite collects and runs, and the pure-logic tests (chunk walk, master
-rotation, clamping) run everywhere. The end-to-end proof — "the filesystem's own
-accounting went down" — only runs on a machine with bcachefs, via
-`pytest -m integration`.
+The runner's own ext4 filesystem cannot deduplicate, so CI mounts a loop-backed
+**btrfs** (1 GiB image, `mkdir /mnt/dedupe`, `mount -o loop`) and points
+`BCHDEDUPE_TEST_DIR` at it. `FIDEDUPERANGE` is generic — the VFS dispatches it to
+whatever the filesystem implements — so btrfs exercises the same contract as
+bcachefs, including the `DIFFERS` path and the end-to-end check that free space
+comes back (`statvfs`, which btrfs reports accurately).
+
+One thing btrfs cannot cover: bcachefs's own answer to the ioctl is optimistic
+(it reports a whole range after sharing part of it). That is pinned by a unit
+test that stubs the ioctl, and by the real-run numbers recorded in
+`docs/why-not-duperemove.md`.
+
+And one thing no automated test covers, deliberately: whether bcachefs actually
+gave the space back. `bcachefs fs usage` is the only figure worth reading there,
+and it is far too lazy to serve as an oracle — measured: a 128 MiB deduplication
+moved it by nothing in 180 s, while a 17-minute run moved it by 83 GB. So the
+end-to-end proof on bcachefs is a manual measurement, recorded with its numbers,
+rather than a test that would fail at random.

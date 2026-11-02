@@ -29,7 +29,49 @@ jobs:
       - name: Type check
         run: mypy
       - name: Tests
-        # The FIDEDUPERANGE tests skip on the runner's ext4 filesystem; see
-        # hooks/README.md. The pure-logic tests run here and are the ones that
-        # guard the chunk walk and the safety accounting.
+        # FIDEDUPERANGE is not implemented on ext4, so the ioctl tests skip here
+        # and say so. The job below runs them for real.
         run: pytest -v
+
+  dedupe-on-a-real-filesystem:
+    # The runner's own ext4 cannot deduplicate, so the tests that exercise
+    # FIDEDUPERANGE need a filesystem that can. btrfs is the cheap answer:
+    # xfsprogs and btrfs-progs are in the image's archive, a loop device needs no
+    # extra privileges beyond the sudo every runner has, and the ioctl is generic
+    # — the VFS dispatches FIDEDUPERANGE to whatever the filesystem implements, so
+    # btrfs exercises exactly the same contract as bcachefs.
+    #
+    # What this cannot cover: bcachefs's own answer to the ioctl is optimistic, and
+    # that behaviour is pinned by unit tests instead
+    # (test_a_differing_block_is_never_shared_though_the_kernel_over_reports).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install --group dev -e .
+          sudo apt-get update
+          sudo apt-get install -y fd-find btrfs-progs
+      - name: Create a loopback btrfs to deduplicate on
+        run: |
+          set -eux
+          image="$RUNNER_TEMP/dedupe.img"
+          truncate -s 1G "$image"
+          sudo mkfs.btrfs -q -L bchdedupe "$image"
+          sudo mkdir -p /mnt/dedupe
+          sudo mount -o loop "$image" /mnt/dedupe
+          sudo chown "$(id -u):$(id -g)" /mnt/dedupe
+          df -h /mnt/dedupe
+      - name: Tests, on a filesystem that can deduplicate
+        env:
+          BCHDEDUPE_TEST_DIR: /mnt/dedupe
+        run: |
+          pytest -v -rs
+          # Deselected by default: reads whole-filesystem counters, which move on
+          # their own. btrfs reports those accurately, so this is where the
+          # end-to-end "the space really came back" claim gets checked.
+          pytest -v -rs -m integration
