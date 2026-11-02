@@ -94,6 +94,11 @@ bound: it can report a whole requested range after sharing only part of it, whic
 is why the tool asks `bcachefs fs usage` before and after and prints the delta.
 Filesystem accounting lags behind the operation, so the delta is a floor.
 
+On the real run those two numbers were 171.4 GB claimed against 83.3 GB measured —
+roughly a factor of two, which is why the claimed figure is never the one to
+report. See
+[docs/why-not-duperemove.md](docs/why-not-duperemove.md#how-far-off-it-can-be-in-the-field).
+
 ## What it does not do
 
 * **It never deletes anything**, and never rewrites content. Deduplication only

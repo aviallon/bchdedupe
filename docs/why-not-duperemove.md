@@ -78,3 +78,19 @@ bcachefs fs usage -f replicas /
 
 `bchdedupe apply` prints both — what the kernel claimed, and what filesystem
 accounting moved — and the second one is the one to quote.
+
+### How far off it can be, in the field
+
+A real run over 251 groups on a 4 TB home, with the machine otherwise idle:
+
+```
+1x before: 3758433726976
+491 files deduplicated, 171.4 GB reclaimed in 1053.5s (162.7 MB/s)
+1x after:  3675168236032
+```
+
+The kernel claimed **171.4 GB**; filesystem accounting moved **83.3 GB** over the
+same window (which also contained the usual churn: a Nix build, test runs). So on
+that workload the claim was roughly twice the truth. The tool prints both numbers
+for that reason, and the docs, the README and the commit messages all say the
+same thing: the second number is the result, the first is a claim.
