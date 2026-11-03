@@ -275,7 +275,7 @@ def _index_file(directory: Path) -> str:
             "+1B",
             ".",
             str(directory),
-            "-x",
+            "-X",
             "stat",
             "-c",
             "%s|%i|%n",

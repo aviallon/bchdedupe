@@ -79,6 +79,16 @@ bcachefs fs usage -f replicas /
 `bchdedupe apply` prints both — what the kernel claimed, and what filesystem
 accounting moved — and the second one is the one to quote.
 
+### It is not idempotent either
+
+Calling dedupe on two files that already share their extents reports the full
+length again. Three calls in a row on a 16 MiB pair answered `16777216` each
+time, with no further space freed after the first.
+
+So a second pass over the same tree claims the same bytes a second time while
+changing nothing on disk. The claimed total is not even a property of one run: it
+counts successful ioctls, not space.
+
 ### How far off it can be, in the field
 
 A real run over 251 groups on a 4 TB home, with the machine otherwise idle:

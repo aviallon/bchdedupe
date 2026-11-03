@@ -220,6 +220,11 @@ def walk_fd(root: str, min_size: int) -> list[FileEntry] | None:
     real machine. Pseudo-filesystems are filtered out afterwards, with the same
     predicate :func:`walk` uses, so the two functions agree by construction.
     Returns ``None`` when ``fd`` is absent.
+
+    ``-X`` batches many paths per ``stat`` invocation instead of ``-x``'s one
+    process per file. Measured on 29 838 files: 4.5 s against 13.9 s, for byte
+    identical output. It only matters below ~100 MB, where the file count
+    explodes, but that is exactly where a deep scan lives.
     """
     binary = find_fd()
     if binary is None:
@@ -234,7 +239,7 @@ def walk_fd(root: str, min_size: int) -> list[FileEntry] | None:
         f"+{min_size}B",
         ".",
         os.path.abspath(root),
-        "-x",
+        "-X",
         "stat",
         "-c",
         "%s|%i|%n",
